@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карта фронта</title>
+    <!-- Подключаем стили Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Подключаем стили Leaflet.Draw -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <!-- Подключаем Turf.js для геометрии -->
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            width: 100vw;
+            height: 100vh;
+        }
+        .panel {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(5px);
+            padding: 14px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 310px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #1a1a1a;
+        }
+        .panel h4 {
+            margin: 12px 0 6px 0;
+            font-size: 13px;
+            color: #555;
+            border-top: 1px solid #eaeaea;
+            padding-top: 8px;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 9px 12px;
+            margin: 6px 0;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            color: white;
+            text-align: left;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        .color-btn {
+            height: 34px;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 0;
+        }
+        .color-btn.active-zone {
+            border: 2px solid #1a1a1a;
+            transform: scale(1.05);
+            box-shadow: 0 0 6px rgba(0,0,0,0.3);
+        }
+        .hex-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .hex-container input[type="text"] {
+            flex: 1;
+            padding: 7px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+        .hex-container input[type="color"] {
+            width: 36px;
+            height: 34px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: none;
+        }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #333;
+            margin: 10px 0;
+            cursor: pointer;
+            user-select: none;
+        }
+        .checkbox-container input {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .btn-brush { 
+            background-color: #f57c00; 
+            text-align: center; 
+            margin-top: 12px; 
+            font-size: 14px;
+        }
+        .btn-ruler {
+            background-color: #00897b;
+            text-align: center;
+            margin-top: 6px;
+            font-size: 14px;
+        }
+        .btn-undo { background-color: #607d8b; text-align: center; margin-top: 6px; }
+        .btn-clear { background-color: #e53935; text-align: center; margin-top: 6px; }
+        button.brush-active { 
+            background-color: #e65100 !important; 
+            box-shadow: 0 0 0 2px #1a1a1a; 
+        }
+        button.ruler-active {
+            background-color: #004d40 !important;
+            box-shadow: 0 0 0 2px #1a1a1a;
+        }
+        .map-style-select {
+            width: 100%;
+            padding: 7px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background: #fdfdfd;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        .hint {
+            font-size: 11px;
+            color: #666;
+            margin-top: 10px;
+            line-height: 1.4;
+            border-top: 1px solid #eaeaea;
+            padding-top: 8px;
+        }
+        .province-popup {
+            width: 260px;
+        }
+        .province-popup img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 6px;
+            background: #eee;
+            margin-bottom: 8px;
+        }
+        .province-popup input, .province-popup textarea, .province-popup select {
+            width: 100%;
+            margin: 4px 0;
+            padding: 6px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .province-popup .stats {
+            font-size: 11px;
+            color: #666;
+            margin: 8px 0;
+            border-top: 1px solid #eee;
+            padding-top: 6px;
+        }
+        .popup-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            gap: 6px;
+        }
+        .popup-actions button {
+            padding: 6px 10px;
+            font-size: 11px;
+            margin: 0;
+            text-align: center;
+        }
+        .ruler-tooltip {
+            background: rgba(0, 0, 0, 0.75);
+            border: none;
+            color: #fff;
+            font-weight: bold;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h3>Карта фронта</h3>
+        
+        <h4>Стиль карты:</h4>
+        <select class="map-style-select" id="mapStyleSelect" onchange="changeMapStyle(this.value)">
+            <option value="hybrid" selected>🛰️🏷️ Google Спутник с названиями</option>
+            <option value="osm">🗺️ Стандартная карта (OpenStreetMap)</option>
+            <option value="satellite">🛰️ Чистый спутник (без подписей)</option>
+            <option value="dark">🌙 Тёмный киберпанк</option>
+        </select>
+
+        <h4>Палитра цветов:</h4>
+        <div class="color-grid">
+            <button class="color-btn active-zone" style="background-color: #ff5252;" onclick="setPresetColor('#ff5252')" title="Красный"></button>
+            <button class="color-btn" style="background-color: #2196f3;" onclick="setPresetColor('#2196f3')" title="Синий"></button>
+            <button class="color-btn" style="background-color: #9e9e9e;" onclick="setPresetColor('#9e9e9e')" title="Сердце"></button>
+            <button class="color-btn" style="background-color: #fbc02d;" onclick="setPresetColor('#fbc02d')" title="Желтый"></button>
+            <button class="color-btn" style="background-color: #4caf50;" onclick="setPresetColor('#4caf50')" title="Зеленый"></button>
+            <button class="color-btn" style="background-color: #ff9800;" onclick="setPresetColor('#ff9800')" title="Оранжевый"></button>
+            <button class="color-btn" style="background-color: #9c27b0;" onclick="setPresetColor('#9c27b0')" title="Фиолетовый"></button>
+            <button class="color-btn" style="background-color: #00bcd4;" onclick="setPresetColor('#00bcd4')" title="Бирюзовый"></button>
+            <button class="color-btn" style="background-color: #795548;" onclick="setPresetColor('#795548')" title="Коричневый"></button>
+        </div>
+        
+        <div class="hex-container">
+            <input type="text" id="hexInput" value="#ff5252" placeholder="#HEX" oninput="onHexInputChanged(this.value)">
+            <input type="color" id="colorPicker" value="#ff5252" oninput="onColorPickerChanged(this.value)">
+        </div>
+
+        <label class="checkbox-container">
+            <input type="checkbox" id="cutOverlapCheckbox" checked>
+            Выдавливать чужие территории
+        </label>
+
+        <button id="brushBtn" class="btn-brush" onclick="toggleBrush()">🖌️ Режим кисти: ВЫКЛ</button>
+        <button id="rulerBtn" class="btn-ruler" onclick="toggleRuler()">📏 Линейка: ВЫКЛ</button>
+        <button class="btn-undo" onclick="undoAction()">↩ Отменить шаг</button>
+        <button class="btn-clear" onclick="clearMap()">🗑️ Очистить всё</button>
+        
+        <div class="hint">
+            💡 <b>Инструкция:</b><br>
+            • Рисуйте зоны полигонами или кистью.<br>
+            • Галочка «Выдавливать» автоматически обрезает старые зоны при наложении новых.
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Подключаем скрипты Leaflet и Leaflet.Draw -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <script>
+        if (typeof L === 'undefined' || typeof turf === 'undefined') {
+            alert('Ошибка: Не удалось загрузить необходимые библиотеки.');
+        } else {
+            initMap();
+        }
+
+        function initMap() {
+            L.drawLocal.draw.toolbar.actions.title = 'Отменить рисование';
+            L.drawLocal.draw.toolbar.actions.text = 'Отмена';
+            L.drawLocal.draw.toolbar.finish.title = 'Завершить рисунок';
+            L.drawLocal.draw.toolbar.finish.text = 'Готово';
+            L.drawLocal.draw.toolbar.undo.title = 'Удалить последнюю точку';
+            L.drawLocal.draw.toolbar.undo.text = 'Удалить точку';
+            L.drawLocal.draw.handlers.polygon.tooltip.start = 'Кликните, чтобы начать рисовать фигуру.';
+            L.drawLocal.draw.handlers.polygon.tooltip.cont = 'Кликните, чтобы продолжить фигуру.';
+            L.drawLocal.draw.handlers.polygon.tooltip.end = 'Кликните по первой точке или нажмите Enter, чтобы завершить.';
+
+            var map = L.map('map').setView([48.3794, 31.1656], 7);
+
+            var tileLayers = {
+                hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                    attribution: '&copy; Google Maps'
+                }),
+                satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri'
+                }),
+                osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap contributors'
+                }),
+                dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    maxZoom: 19,
+                    subdomains: 'abcd',
+                    attribution: '&copy; CARTO'
+                })
+            };
+
+            var currentTileLayer = tileLayers.hybrid.addTo(map);
+
+            window.changeMapStyle = function(styleKey) {
+                map.removeLayer(currentTileLayer);
+                if (tileLayers[styleKey]) {
+                    currentTileLayer = tileLayers[styleKey].addTo(map);
+                }
+            };
+
+            var currentZoneType = '#ff5252';
+            var isBrushActive = false;
+            var freehandPoints = [];
+            var tempLine = null;
+
+            var isRulerActive = false;
+            var rulerPoints = [];
+            var rulerLayerGroup = L.layerGroup().addTo(map);
+
+            var drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+            
+            var zonesData = [];
+            var historyStack = [];
+
+            window.setPresetColor = function(hex) {
+                currentZoneType = hex;
+                document.getElementById('hexInput').value = hex;
+                document.getElementById('colorPicker').value = hex;
+                
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active-zone'));
+                if (event && event.target) {
+                    event.target.classList.add('active-zone');
+                }
+            };
+
+            window.onHexInputChanged = function(val) {
+                if (/^#[0-9A-Fa-f]{6}$/.test(val)) {                     currentZoneType = val;                     document.getElementById('colorPicker').value = val;                 } else if (/^[0-9A-Fa-f]{6}$/.test(val)) {
+                    currentZoneType = '#' + val;
+                    document.getElementById('colorPicker').value = '#' + val;
+                }
+            };
+
+            window.onColorPickerChanged = function(val) {
+                currentZoneType = val;
+                document.getElementById('hexInput').value = val;
+            };
+
+            function saveStateToHistory() {
+                historyStack.push(JSON.parse(JSON.stringify(zonesData)));
+                if (historyStack.length > 20) {
+                    historyStack.shift();
+                }
+            }
+
+            window.undoAction = function() {
+                if (historyStack.length === 0) {
+                    alert('Нечего отменять!');
+                    return;
+                }
+                zonesData = historyStack.pop();
+                renderMapLayers(false);
+                saveToLocalStorage();
+            };
+
+            var drawControl = new L.Control.Draw({
+                position: 'topleft',
+                draw: {
+                    polyline: false,
+                    circle: false,
+                    marker: false,
+                    circlemarker: false,
+                    polygon: {
+                        allowIntersection: false,
+                        showArea: true,
+                        shapeOptions: {
+                            color: '#ffeb3b',
+                            weight: 3
+                        }
+                    },
+                    rectangle: true
+                },
+                edit: {
+                    featureGroup: drawnItems,
+                    edit: false,
+                    remove: false
+                }
+            });
+            map.addControl(drawControl);
+
+            map.on(L.Draw.Event.CREATED, function (e) {
+                var layer = e.layer;
+                var geoJson = layer.toGeoJSON();
+                if (geoJson.geometry.type === 'Polygon') {
+                    processNewPolygonCoords(geoJson.geometry.coordinates);
+                }
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    for (let id in map._handlers) {
+                        var handler = map._handlers[id];
+                        if (handler && handler._enabled && handler.completeShape) {
+                            handler.completeShape();
+                            break;
+                        }
+                    }
+                }
+            });
+
+            window.toggleBrush = function() {
+                if (isRulerActive) toggleRuler();
+                isBrushActive = !isBrushActive;
+                var btn = document.getElementById('brushBtn');
+                if (isBrushActive) {
+                    btn.classList.add('brush-active');
+                    btn.innerHTML = '🖌 Режим кисти: ВКЛ';
+                    map.dragging.disable();
+                } else {
+                    btn.classList.remove('brush-active');
+                    btn.innerHTML = '🖌️ Режим кисти: ВЫКЛ';
+                    map.dragging.enable();
+                }
+            };
+
+            window.toggleRuler = function() {
+                if (isBrushActive) toggleBrush();
+                isRulerActive = !isRulerActive;
+                var btn = document.getElementById('rulerBtn');
+                if (isRulerActive) {
+                    btn.classList.add('ruler-active');
+                    btn.innerHTML = '📏 Линейка: ВКЛ (Клик - точка, Двойной - сброс)';
+                } else {
+                    btn.classList.remove('ruler-active');
+                    btn.innerHTML = '📏 Линейка: ВЫКЛ';
+                    clearRuler();
+                }
+            };
+
+            function clearRuler() {
+                rulerPoints = [];
+                rulerLayerGroup.clearLayers();
+            }
+
+            map.on('click', function(e) {
+                if (!isRulerActive) return;
+                rulerPoints.push(e.latlng);
+
+                var circleMarker = L.circleMarker(e.latlng, {
+                    radius: 5,
+                    color: '#004d40',
+                    fillColor: '#00897b',
+                    fillOpacity: 1
+                });
+                rulerLayerGroup.addLayer(circleMarker);
+
+                if (rulerPoints.length > 1) {
+                    var latlngs = rulerPoints.map(p => [p.lat, p.lng]);
+                    var line = L.polyline(latlngs, {
+                        color: '#00897b',
+                        weight: 4,
+                        dashArray: '5, 5'
+                    });
+                    rulerLayerGroup.addLayer(line);
+
+                    var turfCoords = rulerPoints.map(p => [p.lng, p.lat]);
+                    var lineString = turf.lineString(turfCoords);
+                    var lengthKm = turf.length(lineString, {units: 'kilometers'});
+                    
+                    var distText = lengthKm < 1 ? Math.round(lengthKm * 1000) + ' м' : lengthKm.toFixed(2) + ' км';
+                    
+                    line.bindTooltip(distText, {
+                        permanent: true,
+                        direction: 'center',
+                        className: 'ruler-tooltip'
+                    }).openTooltip();
+                }
+            });
+
+            map.on('dblclick', function(e) {
+                if (!isRulerActive) return;
+                clearRuler();
+            });
+
+            map.on('mousedown', function(e) {
+                if (!isBrushActive) return;
+                freehandPoints = [e.latlng];
+                tempLine = L.polyline(freehandPoints, { color: currentZoneType, weight: 3 }).addTo(map);
+                map.on('mousemove', onMouseMove);
+            });
+
+            function onMouseMove(e) {
+                if (!isBrushActive) return;
+                freehandPoints.push(e.latlng);
+                tempLine.setLatLngs(freehandPoints);
+            }
+
+            map.on('mouseup', function(e) {
+                if (!isBrushActive) return;
+                map.off('mousemove', onMouseMove);
+
+                if (tempLine) {
+                    map.removeLayer(tempLine);
+                    tempLine = null;
+                }
+
+                if (freehandPoints.length > 2) {
+                    var turfCoords = freehandPoints.map(p => [p.lng, p.lat]);
+                    turfCoords.push([freehandPoints[0].lng, freehandPoints[0].lat]);
+                    processNewPolygonCoords([turfCoords]);
+                }
+                freehandPoints = [];
+            });
+
+            function removeHoles(polygonFeature) {
+                try {
+                    if (polygonFeature.geometry.type === 'Polygon') {
+                        return turf.polygon([polygonFeature.geometry.coordinates[0]]);
+                    } else if (polygonFeature.geometry.type === 'MultiPolygon') {
+                        var cleanPolys = polygonFeature.geometry.coordinates.map(polyCoords => {
+                            return [polyCoords[0]];
+                        });
+                        return turf.multiPolygon(cleanPolys);
+                    }
+                } catch (e) {}
+                return polygonFeature;
+            }
+
+            function processNewPolygonCoords(coords) {
+                var newPoly = turf.polygon(coords);
+                var shouldCut = document.getElementById('cutOverlapCheckbox').checked;
+
+                saveStateToHistory();
+
+                if (shouldCut) {
+                    var cuttingShape = newPoly;
+                    var newZonesBuffer = [];
+
+                    zonesData.forEach(item => {
+                        if (item.color !== currentZoneType) {
+                            try {
+                                var oldPoly = turf.polygon(item.coords);
+                                var diff = turf.difference(oldPoly, cuttingShape);
+                                if (diff) {
+                                    var filledDiff = removeHoles(diff);
+                                    if (filledDiff && filledDiff.geometry) {
+                                        let parts = [];
+                                        if (filledDiff.geometry.type === 'Polygon') {
+                                            parts.push(filledDiff.geometry.coordinates);
+                                        } else if (filledDiff.geometry.type === 'MultiPolygon') {
+                                            filledDiff.geometry.coordinates.forEach(pCoords => {
+                                                parts.push(pCoords);
+                                            });
+                                        }
+
+                                        if (parts.length > 0) {
+                                            item.coords = parts[0];
+                                            for (let k = 1; k < parts.length; k++) {
+                                                newZonesBuffer.push({
+                                                    color: item.color,
+                                                    coords: parts[k],
+                                                    name: item.name,
+                                                    desc: item.desc,
+                                                    img: item.img,
+                                                    weight: item.weight || 2,
+                                                    isNew: false
+                                                });
+                                            }
+                                        } else {
+                                            item.coords = null;
+                                        }
+                                    } else {
+                                        item.coords = null;
+                                    }
+                                } else {
+                                    item.coords = null;
+                                }
+                            } catch(err) {}
+                        }
+                    });
+
+                    zonesData = zonesData.filter(item => item.coords !== null);
+                    if (newZonesBuffer.length > 0) {
+                        zonesData = zonesData.concat(newZonesBuffer);
+                    }
+                }
+
+                var intersectingIndices = [];
+                for (let i = 0; i < zonesData.length; i++) {
+                    if (zonesData[i].color === currentZoneType) {
+                        try {
+                            let existingPoly = turf.polygon(zonesData[i].coords);
+                            if (turf.booleanIntersects(newPoly, existingPoly) || turf.booleanOverlap(newPoly, existingPoly)) {
+                                intersectingIndices.push(i);
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                var mergedPoly = newPoly;
+                var assignedName = 'Провинция';
+                var assignedDesc = 'Описание зоны...';
+                var assignedImg = '';
+                var assignedWeight = 2;
+
+                if (intersectingIndices.length > 0) {
+                    intersectingIndices.sort((a, b) => b - a);
+                    intersectingIndices.forEach(idx => {
+                        let oldZone = zonesData.splice(idx, 1)[0];
+                        try {
+                            let oldPoly = turf.polygon(oldZone.coords);
+                            let unionRes = turf.union(mergedPoly, oldPoly);
+                            if (unionRes) {
+                                mergedPoly = removeHoles(unionRes);
+                            }
+                            if (oldZone.name && oldZone.name !== 'Провинция') assignedName = oldZone.name;
+                            if (oldZone.desc && oldZone.desc !== 'Описание зоны...') assignedDesc = oldZone.desc;
+                            if (oldZone.img) assignedImg = oldZone.img;
+                            if (oldZone.weight) assignedWeight = oldZone.weight;
+                        } catch(err) {}
+                    });
+                }
+
+                if (mergedPoly.geometry.type === 'Polygon') {
+                    zonesData.push({
+                        color: currentZoneType,
+                        coords: mergedPoly.geometry.coordinates,
+                        name: assignedName,
+                        desc: assignedDesc,
+                        img: assignedImg,
+                        weight: assignedWeight,
+                        isNew: true
+                    });
+                } else if (mergedPoly.geometry.type === 'MultiPolygon') {
+                    mergedPoly.geometry.coordinates.forEach(polyCoords => {
+                        zonesData.push({
+                            color: currentZoneType,
+                            coords: [polyCoords[0]],
+                            name: assignedName,
+                            desc: assignedDesc,
+                            img: assignedImg,
+                            weight: assignedWeight,
+                            isNew: true
+                        });
+                    });
+                }
+
+                renderMapLayers(true);
+                saveToLocalStorage();
+            }
+
+            window.updateProvinceData = function(index) {
+                var nameInput = document.getElementById('prov-name-' + index);
+                var descInput = document.getElementById('prov-desc-' + index);
+                var imgInput = document.getElementById('prov-img-' + index);
+                var colorInput = document.getElementById('prov-color-' + index);
+                var weightInput = document.getElementById('prov-weight-' + index);
+
+                if (zonesData[index]) {
+                    saveStateToHistory();
+                    zonesData[index].name = nameInput.value;
+                    zonesData[index].desc = descInput.value;
+                    zonesData[index].img = imgInput.value;
+                    zonesData[index].color = colorInput.value;
+                    zonesData[index].weight = parseFloat(weightInput.value) || 2;
+                    
+                    renderMapLayers(false);
+                    saveToLocalStorage();
+                }
+            };
+
+            window.deleteProvince = function(index) {
+                if (confirm('Удалить эту провинцию?')) {
+                    saveStateToHistory();
+                    zonesData.splice(index, 1);
+                    renderMapLayers(false);
+                    saveToLocalStorage();
+                }
+            };
+
+            function renderMapLayers(animateNew) {
+                drawnItems.clearLayers();
+
+                zonesData.forEach((item, index) => {
+                    if (!item.coords) return;
+                    var poly = turf.polygon(item.coords);
+                    var zoneColor = item.color || '#ff5252';
+                    
+                    var targetFillOpacity = 0.5;
+                    var targetWeight = item.weight !== undefined ? item.weight : 2;
+
+                    var colorStyle = { 
+                        color: zoneColor, 
+                        fillColor: zoneColor, 
+                        fillOpacity: (animateNew && item.isNew) ? 0 : targetFillOpacity, 
+                        weight: targetWeight
+                    };
+
+                    var areaSqKm = Math.round(turf.area(poly) / 1000000);
+                    var perimeterKm = Math.round(turf.length(poly, {units: 'kilometers'}));
+                    var imgHtml = item.img ? `<img src="${item.img}" alt="Флаг/Картинка">` : '';
+
+                    var popupContent = `
+                        <div class="province-popup">
+                            ${imgHtml}
+                            <input type="text" id="prov-name-${index}" value="${item.name || ''}" placeholder="Название провинции">
+                            <textarea id="prov-desc-${index}" rows="2" placeholder="Описание...">${item.desc || ''}</textarea>
+                            <input type="text" id="prov-img-${index}" value="${item.img || ''}" placeholder="URL картинки/флага">
+                            
+                            <div style="display:flex; align-items:center; gap:6px; margin:4px 0;">
+                                <label style="font-size:12px; color:#555;">Цвет:</label>
+                                <input type="color" id="prov-color-${index}" value="${zoneColor}" style="flex:1; height:28px; border:1px solid #ccc; border-radius:4px; cursor:pointer; background:none;">
+                            </div>
+
+                            <div style="display:flex; align-items:center; gap:6px; margin:4px 0;">
+                                <label style="font-size:12px; color:#555;">Обводка (px):</label>
+                                <input type="number" id="prov-weight-${index}" value="${targetWeight}" min="0" max="20" step="0.5" style="width:70px; padding:4px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+                            </div>
+
+                            <div class="stats">
+                                Площадь: <b>${areaSqKm} км²</b><br>
+                                Периметр: <b>${perimeterKm} км</b>
+                            </div>
+
+                            <div class="popup-actions">
+                                <button class="btn-blue" style="background:#1a73e8;" onclick="updateProvinceData(${index})">💾 Сохранить</button>
+                                <button class="btn-clear" onclick="deleteProvince(${index})">🗑 Удалить</button>
+                            </div>
+                        </div>
+                    `;
+
+                    var mainLayer = L.geoJSON(poly, { style: colorStyle });
+                    mainLayer.bindPopup(popupContent);
+                    drawnItems.addLayer(mainLayer);
+
+                    if (animateNew && item.isNew) {
+                        let startTime = null;
+                        let duration = 800;
+
+                        function step(timestamp) {
+                            if (!startTime) startTime = timestamp;
+                            let progress = (timestamp - startTime) / duration;
+                            if (progress > 1) progress = 1;
+
+                            let easeProgress = 1 - Math.pow(1 - progress, 3);
+                            let currentOpacity = easeProgress * targetFillOpacity;
+
+                            mainLayer.setStyle({ fillOpacity: currentOpacity });
+
+                            if (progress < 1) {
+                                requestAnimationFrame(step);
+                            }
+                        }
+                        requestAnimationFrame(step);
+                    }
+
+                    item.isNew = false;
+                });
+            }
+
+            function saveToLocalStorage() {
+                localStorage.setItem('deepstate_buffer_push_zones_v49', JSON.stringify(zonesData));
+            }
+
+            function loadFromLocalStorage() {
+                var savedZones = localStorage.getItem('deepstate_buffer_push_zones_v49');
+                try {
+                    if (savedZones) {
+                        zonesData = JSON.parse(savedZones);
+                        zonesData.forEach(z => {
+                            if (!z.name) z.name = 'Провинция';
+                            if (!z.desc) z.desc = '';
+                            if (!z.img) z.img = '';
+                            if (!z.color) z.color = '#ff5252';
+                            if (z.weight === undefined) z.weight = 2;
+                            z.isNew = false;
+                        });
+                    }
+                    renderMapLayers(false);
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+
+            loadFromLocalStorage();
+
+            window.clearMap = function() {
+                if (confirm('Очистить всю карту?')) {
+                    saveStateToHistory();
+                    zonesData = [];
+                    drawnItems.clearLayers();
+                    localStorage.removeItem('deepstate_buffer_push_zones_v49');
+                }
+            };
+        }
+    </script>
+</body>
+</html>
